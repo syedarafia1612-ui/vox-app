@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes" />
+    <title>Vox · real‑time voice & text</title>
+    <!-- Socket.IO client -->
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js" integrity="sha384-+nT8hDczFc3+8z4KtHv+DyS2nw4jDVo6j3VnZ+H1GYy1kVJ4oHNgbWmSj1b7Df3" crossorigin="anonymous"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            background: linear-gradient(145deg, #f6f9fc 0%, #edf2f7 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+        }
+
+        .app-card {
+            max-width: 500px;
+            width: 100%;
+            background: rgba(255, 255, 255, 0.75);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            border-radius: 48px;
+            padding: 32px 24px 28px;
+            box-shadow: 0 20px 40px rgba(0, 10, 30, 0.12), 0 8px 18px rgba(0, 0, 0, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            transition: box-shadow 0.2s;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        h1 {
+            font-weight: 600;
+            font-size: 1.7rem;
+            letter-spacing: -0.5px;
+            color: #0b1e33;
+            margin-bottom: 18px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        h1 small {
+            font-size: 0.9rem;
+            font-weight: 400;
+            color: #3a5670;
+            background: rgba(60, 90, 120, 0.08);
+            padding: 2px 12px;
+            border-radius: 40px;
+            margin-left: 6px;
+        }
+
+        /* mic button */
+        .mic-wrapper {
+            position: relative;
+            margin: 6px 0 18px;
+            touch-action: none;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        .mic-btn {
+            width: 140px;
+            height: 140px;
+            border-radius: 50%;
+            background: #ffffff;
+            border: none;
+            box-shadow: 0 12px 28px rgba(0, 20, 40, 0.15), 0 4px 12px rgba(0, 0, 0, 0.02);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s ease;
+            cursor: pointer;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+            background: radial-gradient(circle at 30% 30%, #ffffff, #f0f4fa);
+        }
+
+        .mic-btn:active {
+            transform: scale(0.94);
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+        }
+
+        .mic-btn svg {
+            width: 60px;
+            height: 60px;
+            fill: #1d3b5c;
+            transition: fill 0.2s;
+        }
+
+        .mic-btn.active {
+            background: radial-gradient(circle at 30% 30%, #e53e3e, #b91c1c);
+            box-shadow: 0 0 0 6px rgba(229, 62, 62, 0.25), 0 12px 28px rgba(200, 40, 40, 0.3);
+        }
+
+        .mic-btn.active svg {
+            fill: white;
+        }
+
+        .mic-status {
+            text-align: center;
+            font-size: 0.9rem;
+            font-weight: 450;
+            color: #1f3a57;
+            margin-top: 8px;
+            min-height: 1.6rem;
+            letter-spacing: -0.2px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        .status-dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 10px;
+            background: #7f8fa4;
+            transition: background 0.2s;
+        }
+        .status-dot.on {
+            background: #38a169;
+        }
+        .status-dot.speaking {
+            background: #e53e3e;
+            animation: pulse-dot 0.9s infinite;
+        }
+        .status-dot.error {
+            background: #e53e3e;
+        }
+
+        @keyframes pulse-dot {
+            0% { opacity: 0.5; transform: scale(0.95); }
+            50% { opacity: 1; transform: scale(1.2); }
+            100% { opacity: 0.5; transform: scale(0.95); }
+        }
+
+        /* chat area */
+        .chat-section {
+            width: 100%;
+            margin-top: 12px;
+        }
+
+        .chat-box {
+            background: rgba(255, 255, 255, 0.6);
+            backdrop-filter: blur(2px);
+            -webkit-backdrop-filter: blur(2px);
+            border-radius: 28px;
+            padding: 12px 16px 8px;
+            border: 1px solid rgba(255, 255, 255, 0.8);
+            box-shadow: inset 0 2px 6px rgba(0,0,0,0.02);
+        }
+
+        .chat-messages {
+            max-height: 120px;
+            overflow-y: auto;
+            margin-bottom: 10px;
+            padding-right: 4px;
+            font-size: 0.95rem;
+            line-height: 1.4;
+            color: #0b1e2f;
+            scroll-behavior: smooth;
+        }
+
+        .chat-messages::-webkit-scrollbar {
+            width: 4px;
+        }
+        .chat-messages::-webkit-scrollbar-thumb {
+            background: #b0c6db;
+            border-radius: 20px;
+        }
+
+        .chat-message {
+            padding: 4px 0;
+            border-bottom: 1px solid rgba(0,0,0,0.03);
+            word-wrap: break-word;
+        }
+        .chat-message:last-child {
+            border-bottom: none;
+        }
+
+        .msg-user {
+            font-weight: 600;
+            color: #1f4a7a;
+        }
+        .msg-user.me {
+            color: #b22234;
+        }
+        .msg-time {
+            font-size: 0.7rem;
+            color: #5e6f82;
+            margin-left: 8px;
+            font-weight: 400;
+        }
+
+        .chat-input-row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            background: white;
+            border-radius: 60px;
+            padding: 4px 4px 4px 18px;
+            border: 1px solid #dce4ed;
+            transition: border 0.15s;
+        }
+        .chat-input-row:focus-within {
+            border-color: #3b6b9b;
+        }
+
+        .chat-input-row input {
+            flex: 1;
+            border: none;
+            padding: 12px 0;
+            font-size: 0.95rem;
+            background: transparent;
+            outline: none;
+            min-width: 60px;
+            color: #0a1c2e;
+        }
+        .chat-input-row input::placeholder {
+            color: #889bb0;
+            font-weight: 350;
+        }
+
+        .chat-input-row button {
+            background: #1d3b5c;
+            border: none;
+            border-radius: 40px;
+            padding: 10px 22px;
+            font-weight: 500;
+            font-size: 0.9rem;
+            color: white;
+            cursor: pointer;
+            transition: background 0.15s, transform 0.08s;
+            white-space: nowrap;
+            letter-spacing: 0.3px;
+            box-shadow: 0 4px 10px rgba(20, 50, 80, 0.15);
+        }
+        .chat-input-row button:hover {
+            background: #12304b;
+        }
+        .chat-input-row button:active {
+            transform: scale(0.95);
+        }
+
+        .char-counter {
+            font-size: 0.7rem;
+            color: #667e96;
+            padding-right: 4px;
+            font-weight: 400;
+            min-width: 32px;
+            text-align: right;
+        }
+        .char-counter.warn {
+            color: #b7791f;
+        }
+        .char-counter.danger {
+            color: #b91c1c;
+        }
+
+        .footer-info {
+            margin-top: 16px;
+            font-size: 0.7rem;
+            color: #5b738b;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 14px 22px;
+            width: 100%;
+            border-top: 1px solid rgba(0,0,0,0.03);
+            padding-top: 14px;
+        }
+        .peer-badge {
+            background: rgba(40, 70, 100, 0.07);
+            padding: 4px 14px;
+            border-radius: 40px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .peer-badge .count {
+            font-weight: 600;
+            color: #1d3b5c;
+        }
+
+        @media (max-width: 460px) {
+            .app-card { padding: 20px 16px; }
+            .mic-btn { width: 120px; height: 120px; }
+            .mic-btn svg { width: 50px; height: 50px; }
+            .chat-messages { max-height: 100px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-card" id="app">
+        <h1>🎙️ Vox <small>live</small></h1>
+
+        <!-- microphone -->
+        <div class="mic-wrapper">
+            <button class="mic-btn" id="micButton" aria-label="Push to talk">
+                <svg viewBox="0 0 24 24" width="60" height="60">
+                    <path d="M12 16c-2.206 0-4-1.794-4-4V6c0-2.206 1.794-4 4-4s4 1.794 4 4v6c0 2.206-1.794 4-4 4zm8-4h-2c0 2.607-2.126 4.5-5 4.5S8 14.607 8 12H6c0 3.157 2.416 5.5 5 5.944V20h2v-2.056c2.584-.444 5-2.787 5-5.944z"/>
+                </svg>
+            </button>
+        </div>
+
+        <div class="mic-status" id="micStatus">
+            <span class="status-dot" id="statusDot"></span>
+            <span id="statusText">Press mic to talk</span>
+        </div>
+
+        <!-- chat -->
+        <div class="chat-section">
+            <div class="chat-box">
+                <div class="chat-messages" id="chatMessages">
+                    <div class="chat-message" style="color:#5f738b; font-style:italic;">── connecting to room ──</div>
+                </div>
+                <div class="chat-input-row">
+                    <input type="text" id="chatInput" placeholder="Message (max 800)" maxlength="800" autocomplete="off" />
+                    <span class="char-counter" id="charCounter">0/800</span>
+                    <button id="sendButton">Send</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer-info">
+            <span class="peer-badge">👥 <span class="count" id="peerCount">0</span> online</span>
+            <span>⚡ WebRTC · PTT</span>
+        </div>
+    </div>
+
+    <script>
+        (function() {
+            "use strict";
+
+            // ---------- DOM refs ----------
+            const micBtn = document.getElementById('micButton');
+            const statusText = document.getElementById('statusText');
+            const statusDot = document.getElementById('statusDot');
+            const chatMessages = document.getElementById('chatMessages');
+            const chatInput = document.getElementById('chatInput');
+            const sendBtn = document.getElementById('sendButton');
+            const charCounter = document.getElementById('charCounter');
+            const peerCountSpan = document.getElementById('peerCount');
+
+            // ---------- state ----------
+            let socket = null;
+            let localStream = null;
+            let peerConnections = new Map(); // socketId -> RTCPeerConnection
+            let isMicActive = false;         // push-to-talk pressed
+            let isConnected = false;
+            let userId = null;               // our socket id
+            let isSpeaking = false;          // for UI indicator
+            let permissionDenied = false;
+            let roomName = 'vox-room';       // fixed room
+
+            // ---------- helpers ----------
+            function addChatMessage(text, sender = 'system', isMe = false) {
+                const div = document.createElement('div');
+                div.className = 'chat-message';
+                const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                let displayName = sender;
+                if (sender === 'system') displayName = '⚡';
+                else if (sender === userId) displayName = 'You';
+                const userSpan = document.createElement('span');
+                userSpan.className = `msg-user ${isMe ? 'me' : ''}`;
+                userSpan.textContent = displayName;
+                const timeSpan = document.createElement('span');
+                timeSpan.className = 'msg-time';
+                timeSpan.textContent = time;
+                div.appendChild(userSpan);
+                div.appendChild(timeSpan);
+                div.appendChild(document.createTextNode(' ' + text));
+                chatMessages.appendChild(div);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+                // keep last 50 messages
+                while (chatMessages.children.length > 50) {
+                    chatMessages.removeChild(chatMessages.firstChild);
+                }
+            }
+
+            function updatePeerCount(count) {
+                peerCountSpan.textContent = count || 0;
+            }
+
+            function setMicStatus(text, dotState) {
+                statusText.textContent = text;
+                statusDot.className = 'status-dot';
+                if (dotState === 'on') statusDot.classList.add('on');
+                else if (dotState === 'speaking') statusDot.classList.add('speaking');
+                else if (dotState === 'error') statusDot.classList.add('error');
+            }
+
+            // ---------- WebRTC signaling ----------
+            function createPeerConnection(remoteId) {
+                const pc = new RTCPeerConnection({
+                    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+                });
+
+                // add local tracks if we have them
+                if (localStream) {
+                    localStream.getTracks().forEach(track => {
+                        pc.addTrack(track, localStream);
+                    });
+                }
+
+                pc.onicecandidate = (event) => {
+                    if (event.candidate) {
+                        socket.emit('ice-candidate', { target: remoteId, candidate: event.candidate });
+                    }
+                };
+
+                pc.ontrack = (event) => {
+                    // play incoming audio
+                    const remoteAudio = new Audio();
+                    remoteAudio.srcObject = event.streams[0];
+                    remoteAudio.autoplay = true;
+                    remoteAudio.volume = 0.8;
+                    // indicate someone is speaking
+                    isSpeaking = true;
+                    setMicStatus('🔊 listening...', 'speaking');
+                    event.streams[0].onremovetrack = () => {
+                        isSpeaking = false;
+                        if (!isMicActive) {
+                            setMicStatus('Press mic to talk', 'on');
+                        }
+                    };
+                    setTimeout(() => {
+                        if (!isMicActive && !isSpeaking) {
+                            setMicStatus('Press mic to talk', 'on');
+                        }
+                    }, 300);
+                };
+
+                pc.onnegotiationneeded = () => {
+                    negotiatePeerConnection(remoteId, pc);
+                };
+
+                pc.onconnectionstatechange = () => {
+                    if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+                        peerConnections.delete(remoteId);
+                    }
+                };
+
+                return pc;
+            }
+
+            async function negotiatePeerConnection(remoteId, pc) {
+                if (!socket || !pc || pc.connectionState === 'closed') return;
+                if (!pc.remoteDescription || pc.signalingState !== 'stable') return;
+                try {
+                    const offer = await pc.createOffer();
+                    await pc.setLocalDescription(offer);
+                    socket.emit('offer', { target: remoteId, sdp: pc.localDescription });
+                } catch (err) {
+                    console.warn('negotiation error', err);
+                }
+            }
+
+            // ---------- socket events ----------
+            function initSocket() {
+                socket = io({
+                    reconnection: true,
+                    reconnectionDelay: 500,
+                });
+
+                socket.on('connect', () => {
+                    userId = socket.id;
+                    isConnected = true;
+                    addChatMessage('Connected to room', 'system');
+                    setMicStatus('Press mic to talk', 'on');
+                    socket.emit('join-room', roomName);
+                });
+
+                socket.on('room-users', (users) => {
+                    // users is array of socket ids (including us)
+                    const count = users.length || 0;
+                    updatePeerCount(count);
+                    // remove stale peers
+                    for (let [id, pc] of peerConnections) {
+                        if (!users.includes(id)) {
+                            pc.close();
+                            peerConnections.delete(id);
+                        }
+                    }
+                    // establish connections with new peers (excluding self)
+                    users.forEach(id => {
+                        if (id !== userId && !peerConnections.has(id)) {
+                            const pc = createPeerConnection(id);
+                            peerConnections.set(id, pc);
+                            // create offer
+                            pc.createOffer()
+                                .then(offer => pc.setLocalDescription(offer))
+                                .then(() => {
+                                    socket.emit('offer', { target: id, sdp: pc.localDescription });
+                                })
+                                .catch(err => console.warn('offer error', err));
+                        }
+                    });
+                    updatePeerCount(peerConnections.size);
+                });
+
+                socket.on('offer', async ({ from, sdp }) => {
+                    if (from === userId) return;
+                    let pc = peerConnections.get(from);
+                    if (!pc) {
+                        pc = createPeerConnection(from);
+                        peerConnections.set(from, pc);
+                    }
+                    try {
+                        await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+                        const answer = await pc.createAnswer();
+                        await pc.setLocalDescription(answer);
+                        socket.emit('answer', { target: from, sdp: pc.localDescription });
+                    } catch (e) {
+                        console.warn('offer answer error', e);
+                    }
+                });
+
+                socket.on('answer', async ({ from, sdp }) => {
+                    const pc = peerConnections.get(from);
+                    if (pc) {
+                        try {
+                            await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+                        } catch (e) { console.warn('answer setRemote err', e); }
+                    }
+                });
+
+                socket.on('ice-candidate', ({ from, candidate }) => {
+                    const pc = peerConnections.get(from);
+                    if (pc) {
+                        pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => console.warn('ice err', e));
+                    }
+                });
+
+                socket.on('chat-message', ({ from, text, timestamp }) => {
+                    const isMe = (from === userId);
+                    addChatMessage(text, from, isMe);
+                });
+
+                socket.on('user-left', (id) => {
+                    const pc = peerConnections.get(id);
+                    if (pc) {
+                        pc.close();
+                        peerConnections.delete(id);
+                        updatePeerCount(peerConnections.size);
+                    }
+                });
+
+                socket.on('disconnect', () => {
+                    isConnected = false;
+                    setMicStatus('Disconnected', 'error');
+                    addChatMessage('Connection lost', 'system');
+                    peerConnections.forEach(pc => pc.close());
+                    peerConnections.clear();
+                    updatePeerCount(0);
+                });
+
+                socket.on('connect_error', () => {
+                    setMicStatus('Connection error', 'error');
+                });
+            }
+
+            // ---------- microphone ----------
+            async function enableMicrophone() {
+                if (localStream) return true;
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+                    localStream = stream;
+                    localStream.getAudioTracks().forEach(track => {
+                        track.enabled = false;
+                    });
+                    // add to all existing peers and renegotiate if needed
+                    for (let [id, pc] of peerConnections) {
+                        stream.getTracks().forEach(track => {
+                            pc.addTrack(track, stream);
+                        });
+                        if (pc.remoteDescription && pc.signalingState === 'stable') {
+                            negotiatePeerConnection(id, pc);
+                        }
+                    }
+                    setMicStatus('✅ mic ready · press & hold', 'on');
+                    return true;
+                } catch (err) {
+                    console.warn('mic error', err);
+                    permissionDenied = true;
+                    setMicStatus('🚫 Microphone blocked', 'error');
+                    addChatMessage('Microphone permission denied. Please allow mic access.', 'system');
+                    return false;
+                }
+            }
+
+            // ---------- push-to-talk ----------
+
+            function startSpeaking() {
+                if (!localStream) {
+                    enableMicrophone().then(ok => {
+                        if (ok) startSpeaking();
+                    });
+                    return;
+                }
+                if (isMicActive) return;
+                isMicActive = true;
+                // enable all audio tracks
+                localStream.getAudioTracks().forEach(track => track.enabled = true);
+                micBtn.classList.add('active');
+                setMicStatus('🔴 Speaking...', 'speaking');
+            }
+
+            function stopSpeaking() {
+                if (!isMicActive) return;
+                isMicActive = false;
+                if (localStream) {
+                    localStream.getAudioTracks().forEach(track => track.enabled = false);
+                }
+                micBtn.classList.remove('active');
+                if (isSpeaking) {
+                    setMicStatus('🔊 listening...', 'speaking');
+                } else {
+                    setMicStatus('Press mic to talk', 'on');
+                }
+            }
+
+            // ---------- UI events ----------
+            // Mouse / touch for mic
+            micBtn.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                startSpeaking();
+            });
+            micBtn.addEventListener('mouseup', (e) => {
+                e.preventDefault();
+                stopSpeaking();
+            });
+            micBtn.addEventListener('mouseleave', (e) => {
+                if (micActive) stopSpeaking();
+            });
+            // Touch events for mobile
+            micBtn.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                startSpeaking();
+            });
+            micBtn.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                stopSpeaking();
+            });
+            micBtn.addEventListener('touchcancel', (e) => {
+                stopSpeaking();
+            });
+
+            // Text chat
+            function sendTextMessage() {
+                let text = chatInput.value.trim();
+                if (!text) return;
+                if (text.length > 800) {
+                    text = text.slice(0, 800);
+                }
+                if (!socket || !isConnected) {
+                    addChatMessage('Not connected to server', 'system');
+                    return;
+                }
+                socket.emit('chat-message', { text, room: roomName });
+                addChatMessage(text, userId, true);
+                chatInput.value = '';
+                updateCharCounter();
+            }
+
+            chatInput.addEventListener('input', updateCharCounter);
+            chatInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    sendTextMessage();
+                }
+            });
+            sendBtn.addEventListener('click', sendTextMessage);
+
+            function updateCharCounter() {
+                const len = chatInput.value.length;
+                charCounter.textContent = `${len}/800`;
+                charCounter.className = 'char-counter';
+                if (len > 700) charCounter.classList.add('warn');
+                if (len >= 800) charCounter.classList.add('danger');
+            }
+
+            // ---------- init ----------
+            function init() {
+                initSocket();
+                setMicStatus('Connecting...', '');
+                // request mic permission on first press (already handled)
+                // update peer count when room users change
+                updatePeerCount(0);
+                addChatMessage('Welcome! Push the mic and hold to talk.', 'system');
+                // set char counter
+                updateCharCounter();
+            }
+
+            // Call init
+            init();
+
+            // clean up on page unload
+            window.addEventListener('beforeunload', () => {
+                if (localStream) {
+                    localStream.getTracks().forEach(t => t.stop());
+                }
+                if (socket) socket.disconnect();
+                peerConnections.forEach(pc => pc.close());
+            });
+
+        })();
+    </script>
+</body>
+</html>
