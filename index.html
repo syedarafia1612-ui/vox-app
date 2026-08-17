@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Vox - Voice Note & Text</title>
+    <!-- Socket.IO client -->
+    <script src="/socket.io/socket.io.js"></script>
+<style>
+    /* --- THEME VARIABLES (Dark Mode Default) --- */
+    :root {
+        --bg-gradient-start: #0b1a18;
+        --bg-gradient-end: #0d1f1d;
+        --card-bg: rgba(255, 255, 255, 0.08);
+        --text-main: #f0f5f9;
+        --text-muted: #8899a6;
+        --accent-green: #00bfa5;
+        --accent-green-dark: #00897b;
+        --bubble-mine: #00bfa5;
+        --bubble-theirs: rgba(255, 255, 255, 0.12);
+        --header-bg: rgba(0, 0, 0, 0.4);
+        --input-bg: rgba(255, 255, 255, 0.05);
+        --shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+        --border-color: rgba(255, 255, 255, 0.08);
+    }
+
+    /* --- LIGHT MODE OVERRIDES --- */
+    .light-mode {
+        --bg-gradient-start: #e0f2f1;
+        --bg-gradient-end: #b2dfdb;
+        --card-bg: rgba(255, 255, 255, 0.7);
+        --text-main: #1a1a1a;
+        --text-muted: #555555;
+        --bubble-mine: #00bfa5;
+        --bubble-theirs: #ffffff;
+        --header-bg: rgba(255, 255, 255, 0.6);
+        --input-bg: rgba(255, 255, 255, 0.8);
+        --shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        --border-color: rgba(0, 0, 0, 0.08);
+    }
+
+    /* --- BASE STYLES --- */
+    * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', system-ui, sans-serif; }
+    body {
+        background: linear-gradient(135deg, var(--bg-gradient-start), var(--bg-gradient-end));
+        color: var(--text-main);
+        height: 100vh; width: 100vw; overflow: hidden; display: flex; flex-direction: column;
+        transition: background 0.3s ease;
+    }
+
+    /* --- HEADER --- */
+    .header {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 16px 20px; background: var(--header-bg); backdrop-filter: blur(10px);
+        border-bottom: 1px solid var(--border-color); flex-shrink: 0;
+    }
+    .logo { font-size: 24px; font-weight: 700; color: var(--text-main); display: flex; align-items: center; gap: 10px; }
+    .header-actions { display: flex; gap: 12px; align-items: center; }
+    .theme-toggle {
+        background: var(--card-bg); border: 1px solid var(--border-color);
+        color: var(--text-main); padding: 6px 12px; border-radius: 20px; cursor: pointer;
+        font-size: 14px; transition: all 0.2s;
+    }
+    .theme-toggle:hover { background: var(--bubble-mine); color: #fff; border-color: var(--bubble-mine); }
+
+    /* --- CHAT AREA --- */
+    .chat-container {
+        flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 12px;
+        scroll-behavior: smooth;
+    }
+    .chat-message { max-width: 80%; padding: 12px 16px; border-radius: 16px; word-wrap: break-word; font-size: 15px; position: relative; }
+    .chat-message.me { align-self: flex-end; background: var(--bubble-mine); color: #fff; border-bottom-right-radius: 4px; }
+    .chat-message:not(.me) { align-self: flex-start; background: var(--bubble-theirs); color: var(--text-main); border-bottom-left-radius: 4px; box-shadow: var(--shadow); }
+    .msg-user { font-size: 12px; font-weight: 600; color: var(--bubble-mine); display: block; margin-bottom: 4px; }
+    .chat-message.me .msg-user { color: #e0f2f1; }
+    .msg-time { font-size: 10px; color: var(--text-muted); float: right; margin-left: 8px; margin-top: 4px; }
+
+    /* --- INPUT BAR --- */
+    .input-bar {
+        display: flex; align-items: center; gap: 10px; padding: 12px 16px;
+        background: var(--card-bg); backdrop-filter: blur(10px);
+        border-top: 1px solid var(--border-color); flex-shrink: 0;
+    }
+    .input-bar input {
+        flex: 1; padding: 12px 16px; border-radius: 24px; border: none;
+        background: var(--input-bg); color: var(--text-main); font-size: 15px; outline: none;
+    }
+    .input-bar button {
+        background: var(--bubble-mine); color: #fff; border: none; border-radius: 50%;
+        width: 44px; height: 44px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+        transition: all 0.2s; flex-shrink: 0;
+    }
+    .input-bar button:hover { background: var(--bubble-mine); transform: scale(1.05); }
+    .recording-indicator { color: var(--accent-green); font-size: 13px; font-weight: 500; margin-left: 8px; display: none; }
+    .recording-indicator.active { display: inline-block; }
+    .recording-timer { color: #ff4d4d; font-size: 13px; font-weight: 600; margin-left: 8px; min-width: 40px; }
+</style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">🎙️ Vox</div>
+        <div class="header-actions">
+            <button class="theme-toggle" id="themeToggle">🌙 Dark</button>
+        </div>
+    </div>
+
+    <div class="chat-container" id="chatMessages">
+        <div class="chat-message system">Welcome to Vox!</div>
+    </div>
+
+    <div class="input-bar">
+        <input type="text" id="chatInput" placeholder="Message" maxlength="800" autocomplete="off">
+        <span class="recording-timer" id="recordingTimer"></span>
+        <span class="recording-indicator" id="recordingIndicator" hidden>
+            <span class="recording-dot"></span> Recording...
+        </span>
+        <button id="voiceNoteButton" class="record-btn" aria-label="Record voice note">
+            <svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
+        </button>
+        <button id="sendButton" class="send-btn">Send</button>
+    </div>
+
+    <script>
+        (function() {
+            "use strict";
+
+            const chatMessages = document.getElementById('chatMessages');
+            const chatInput = document.getElementById('chatInput');
+            const sendBtn = document.getElementById('sendButton');
+            const voiceNoteBtn = document.getElementById('voiceNoteButton');
+            const recordingIndicator = document.getElementById('recordingIndicator');
+            const recordingTimer = document.getElementById('recordingTimer');
+            const themeToggle = document.getElementById('themeToggle');
+
+            let socket = null;
+            let userId = null;
+            let isConnected = false;
+            let roomName = 'vox-room';
+            let currentUsername = null;
+            let mediaRecorder = null;
+            let voiceNoteChunks = [];
+            let isRecordingVoiceNote = false;
+            let recordingStartTime = null;
+            let timerInterval = null;
+            let pendingVoiceNoteDataUrl = null;
+            const names = {};
+            const USERNAME_MSG = '__user_name__:';
+
+            // --- THEME TOGGLE ---
+            themeToggle.addEventListener('click', () => {
+                document.body.classList.toggle('light-mode');
+                const isLight = document.body.classList.contains('light-mode');
+                themeToggle.textContent = isLight ? '☀️ Light' : '🌙 Dark';
+            });
+
+            // --- UTILITY FUNCTIONS ---
+            function getStoredUsername() {
+                try {
+                    const stored = localStorage.getItem('vox_username');
+                    return (typeof stored === 'string' && stored.trim()) ? stored.trim() : '';
+                } catch { return ''; }
+            }
+
+            function addChatMessage(text, sender = 'system', isMe = false) {
+                const div = document.createElement('div');
+                div.className = `chat-message ${sender === 'system' ? 'system' : isMe ? 'me' : ''}`;
+                const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                
+                if (sender !== 'system') {
+                    const displayName = (sender === userId) ? currentUsername : (names[sender] || 'Guest');
+                    const userSpan = document.createElement('span');
+                    userSpan.className = 'msg-user';
+                    userSpan.textContent = displayName;
+                    const timeSpan = document.createElement('span');
+                    timeSpan.className = 'msg-time';
+                    timeSpan.textContent = time;
+                    div.appendChild(userSpan);
+                    div.appendChild(timeSpan);
+                }
+
+                const textNode = document.createElement('span');
+                textNode.className = 'bubble-text';
+                textNode.textContent = text;
+                div.appendChild(textNode);
+                chatMessages.appendChild(div);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+
+            // --- SOCKET LOGIC ---
+            function initSocket() {
+                socket = io({ reconnection: true, reconnectionDelay: 500 });
+                socket.on('connect', () => {
+                    userId = socket.id;
+                    isConnected = true;
+                    addChatMessage('Connected to room', 'system');
+                    socket.emit('join-room', roomName);
+                    const storedName = getStoredUsername();
+                    if (storedName) {
+                        names[userId] = storedName;
+                        socket.emit('chat-message', { text: USERNAME_MSG + storedName, room: roomName });
+                    }
+                });
+                socket.on('chat-message', ({ from, text, type, audioDataUrl }) => {
+                    if (from === userId) return;
+                    if (type === 'voice-note' && audioDataUrl) {
+                        createVoiceNoteBubble(from, audioDataUrl);
+                        return;
+                    }
+                    if (typeof text === 'string' && text.startsWith(USERNAME_MSG)) {
+                        const name = text.slice(USERNAME_MSG.length).trim();
+                        if (name) names[from] = name;
+                        return;
+                    }
+                    if (typeof text !== 'string' || !text.trim()) return;
+                    addChatMessage(text, from, false);
+                });
+                socket.on('disconnect', () => { isConnected = false; addChatMessage('Connection lost', 'system'); });
+                socket.on('connect_error', () => { addChatMessage('Connection error', 'system'); });
+            }
+
+            // --- VOICE NOTE LOGIC ---
+            function blobToDataUrl(blob) {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(blob);
+                });
+            }
+
+            function createVoiceNoteBubble(from, audioDataUrl) {
+                const div = document.createElement('div');
+                const isMe = from === userId;
+                div.className = `chat-message ${isMe ? 'me' : ''}`;
+                const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                const displayName = isMe ? currentUsername : (names[from] || 'Guest');
+                
+                const userSpan = document.createElement('span');
+                userSpan.className = 'msg-user';
+                userSpan.textContent = displayName;
+                const timeSpan = document.createElement('span');
+                timeSpan.className = 'msg-time';
+                timeSpan.textContent = time;
+
+                const bubble = document.createElement('div');
+                bubble.className = 'voice-note-bubble';
+
+                const playBtn = document.createElement('button');
+                playBtn.type = 'button';
+                playBtn.className = 'voice-note-play-btn';
+                playBtn.innerHTML = '<span class="play-icon"></span><span class="pause-icon"></span>';
+
+                const waveform = document.createElement('div');
+                waveform.className = 'voice-note-waveform';
+                waveform.innerHTML = '<span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>';
+
+                bubble.appendChild(playBtn);
+                bubble.appendChild(waveform);
+
+                playBtn.addEventListener('click', () => {
+                    if (playBtn.classList.contains('playing')) {
+                        playBtn.classList.remove('playing');
+                        waveform.classList.remove('playing');
+                        return;
+                    }
+                    const audio = new Audio(audioDataUrl);
+                    playBtn.classList.add('playing');
+                    waveform.classList.add('playing');
+                    audio.play().catch(() => {
+                        playBtn.classList.remove('playing');
+                        waveform.classList.remove('playing');
+                    });
+                    audio.onended = () => {
+                        playBtn.classList.remove('playing');
+                        waveform.classList.remove('playing');
+                    };
+                });
+
+                div.appendChild(userSpan);
+                div.appendChild(timeSpan);
+                div.appendChild(bubble);
+                chatMessages.appendChild(div);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+
+            function sendPendingVoiceNote() {
+                if (!pendingVoiceNoteDataUrl) return;
+                const message = { type: 'voice-note', text: '', audioDataUrl: pendingVoiceNoteDataUrl, room: roomName };
+                if (socket && isConnected) socket.emit('chat-message', message);
+                createVoiceNoteBubble(userId, pendingVoiceNoteDataUrl);
+                pendingVoiceNoteDataUrl = null;
+            }
+
+            async function toggleVoiceNoteRecording() {
+                if (!navigator.mediaDevices || !window.MediaRecorder) return;
+                if (isRecordingVoiceNote) {
+                    if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+                    clearInterval(timerInterval);
+                    recordingTimer.textContent = '';
+                    recordingIndicator.hidden = true;
+                    voiceNoteBtn.classList.remove('recording');
+                    isRecordingVoiceNote = false;
+                    return;
+                }
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    voiceNoteChunks = [];
+                    mediaRecorder = new MediaRecorder(stream);
+                    mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) voiceNoteChunks.push(e.data); };
+                    mediaRecorder.onstop = async () => {
+                        const blob = new Blob(voiceNoteChunks, { type: mediaRecorder.mimeType });
+                        stream.getTracks().forEach(t => t.stop());
+                        if (blob.size === 0) return;
+                        pendingVoiceNoteDataUrl = await blobToDataUrl(blob);
+                    };
+                    mediaRecorder.start();
+                    isRecordingVoiceNote = true;
+                    voiceNoteBtn.classList.add('recording');
+                    recordingIndicator.hidden = false;
+                    recordingStartTime = Date.now();
+                    timerInterval = setInterval(() => {
+                        const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
+                        const m = String(Math.floor(elapsed / 60)).padStart(2, '0');
+                        const s = String(elapsed % 60).padStart(2, '0');
+                        recordingTimer.textContent = `${m}:${s}`;
+                    }, 200);
+                } catch { addChatMessage('Microphone permission required', 'system'); }
+            }
+
+            // --- EVENT LISTENERS ---
+            voiceNoteBtn.addEventListener('click', toggleVoiceNoteRecording);
+
+            sendBtn.addEventListener('click', () => {
+                if (pendingVoiceNoteDataUrl) {
+                    sendPendingVoiceNote();
+                    return;
+                }
+                const text = chatInput.value.trim();
+                if (!text || !socket || !isConnected) return;
+                const username = getStoredUsername() || 'Guest';
+                socket.emit('chat-message', { text, room: roomName, username });
+                addChatMessage(text, userId, true);
+                chatInput.value = '';
+            });
+
+            chatInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    sendBtn.click();
+                }
+            });
+
+            // --- EXIT CONFIRMATION ---
+            window.addEventListener('beforeunload', (e) => {
+                e.preventDefault();
+                e.returnValue = 'Are you sure you want to leave?';
+            });
+
+            // --- INIT ---
+            const storedName = getStoredUsername();
+            if (storedName) {
+                currentUsername = storedName;
+                initSocket();
+            } else {
+                const name = prompt('Enter your name to join Vox:');
+                if (name && name.trim()) {
+                    currentUsername = name.trim();
+                    localStorage.setItem('vox_username', currentUsername);
+                    initSocket();
+                } else {
+                    alert('A name is required to join the room.');
+                    location.reload();
+                }
+            }
+        })();
+    </script>
+</body>
+</html>
