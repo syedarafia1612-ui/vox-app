@@ -87,7 +87,8 @@ io.on('connection', (socket) => {
 });
 
 const PORT = parseInt(process.env.PORT, 10) || 3000;
-
+// Give Render servers extra time for username validation
+const TIMEOUT = 60000; 
 // Start server with simple retry if the port is already in use.
 function startServer(port, attempts = 0) {
   // remove previous error listeners to avoid duplicate handling
