@@ -81,7 +81,8 @@
         display: flex; align-items: center; gap: 10px; padding: 12px 16px;
         background: var(--card-bg); backdrop-filter: blur(10px);
         border-top: 1px solid var(--border-color); flex-shrink: 0;
-        padding-bottom: env(safe-area-inset-bottom, 15px);
+        box-sizing: border-box;
+        padding-bottom: calc(env(safe-area-inset-bottom, 15px) + 12px);
         padding-top: 12px;
     }
     .input-bar input {
@@ -164,13 +165,13 @@
                 } catch { return ''; }
             }
 
-            function addChatMessage(text, sender = 'system', isMe = false) {
+            function addChatMessage(text, sender = 'system', isMe = false, username = null) {
                 const div = document.createElement('div');
                 div.className = `chat-message ${sender === 'system' ? 'system' : isMe ? 'me' : ''}`;
                 const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                 
                 if (sender !== 'system') {
-                    const displayName = (sender === userId) ? currentUsername : (names[sender] || 'Guest');
+                    const displayName = (username && username.trim()) ? username.trim() : ((sender === userId) ? (currentUsername || 'Guest') : 'Guest');
                     const userSpan = document.createElement('span');
                     userSpan.className = 'msg-user';
                     userSpan.textContent = displayName;
@@ -203,10 +204,10 @@
                         socket.emit('chat-message', { text: USERNAME_MSG + storedName, room: roomName });
                     }
                 });
-                socket.on('chat-message', ({ from, text, type, audioDataUrl }) => {
+                socket.on('chat-message', ({ from, text, type, audioDataUrl, username }) => {
                     if (from === userId) return;
                     if (type === 'voice-note' && audioDataUrl) {
-                        createVoiceNoteBubble(from, audioDataUrl);
+                        createVoiceNoteBubble(from, audioDataUrl, username || 'Guest');
                         return;
                     }
                     if (typeof text === 'string' && text.startsWith(USERNAME_MSG)) {
@@ -215,7 +216,7 @@
                         return;
                     }
                     if (typeof text !== 'string' || !text.trim()) return;
-                    addChatMessage(text, from, false);
+                    addChatMessage(text, from, false, username || 'Guest');
                 });
                 socket.on('disconnect', () => { isConnected = false; addChatMessage('Connection lost', 'system'); });
                 socket.on('connect_error', () => { addChatMessage('Connection error', 'system'); });
@@ -231,12 +232,12 @@
                 });
             }
 
-            function createVoiceNoteBubble(from, audioDataUrl) {
+            function createVoiceNoteBubble(from, audioDataUrl, username = null) {
                 const div = document.createElement('div');
                 const isMe = from === userId;
                 div.className = `chat-message ${isMe ? 'me' : ''}`;
                 const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                const displayName = isMe ? currentUsername : (names[from] || 'Guest');
+                const displayName = (username && username.trim()) ? username.trim() : (isMe ? (currentUsername || 'Guest') : 'Guest');
                 
                 const userSpan = document.createElement('span');
                 userSpan.className = 'msg-user';
@@ -251,31 +252,31 @@
                 const playBtn = document.createElement('button');
                 playBtn.type = 'button';
                 playBtn.className = 'voice-note-play-btn';
-                playBtn.innerHTML = '<span class="play-icon"></span><span class="pause-icon"></span>';
-
-                const waveform = document.createElement('div');
-                waveform.className = 'voice-note-waveform';
-                waveform.innerHTML = '<span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>';
+                playBtn.textContent = '▶️';
 
                 bubble.appendChild(playBtn);
-                bubble.appendChild(waveform);
 
+                let audio = null;
                 playBtn.addEventListener('click', () => {
-                    if (playBtn.classList.contains('playing')) {
-                        playBtn.classList.remove('playing');
-                        waveform.classList.remove('playing');
+                    if (audio && !audio.paused) {
+                        audio.pause();
+                        audio.currentTime = 0;
+                        playBtn.textContent = '▶️';
                         return;
                     }
-                    const audio = new Audio(audioDataUrl);
-                    playBtn.classList.add('playing');
-                    waveform.classList.add('playing');
+
+                    audio = new Audio(audioDataUrl);
+                    playBtn.textContent = '⏸️';
                     audio.play().catch(() => {
-                        playBtn.classList.remove('playing');
-                        waveform.classList.remove('playing');
+                        playBtn.textContent = '▶️';
                     });
                     audio.onended = () => {
-                        playBtn.classList.remove('playing');
-                        waveform.classList.remove('playing');
+                        playBtn.textContent = '▶️';
+                        audio = null;
+                    };
+                    audio.onpause = () => {
+                        if (!audio || audio.ended) return;
+                        playBtn.textContent = '▶️';
                     };
                 });
 
@@ -288,9 +289,9 @@
 
             function sendPendingVoiceNote() {
                 if (!pendingVoiceNoteDataUrl) return;
-                const message = { type: 'voice-note', text: '', audioDataUrl: pendingVoiceNoteDataUrl, room: roomName };
+                const message = { type: 'voice-note', text: '', audioDataUrl: pendingVoiceNoteDataUrl, room: roomName, username: currentUsername || 'Guest' };
                 if (socket && isConnected) socket.emit('chat-message', message);
-                createVoiceNoteBubble(userId, pendingVoiceNoteDataUrl);
+                createVoiceNoteBubble(userId, pendingVoiceNoteDataUrl, currentUsername || 'Guest');
                 pendingVoiceNoteDataUrl = null;
             }
 
@@ -315,6 +316,7 @@
                         stream.getTracks().forEach(t => t.stop());
                         if (blob.size === 0) return;
                         pendingVoiceNoteDataUrl = await blobToDataUrl(blob);
+                        sendPendingVoiceNote();
                     };
                     mediaRecorder.start();
                     isRecordingVoiceNote = true;
@@ -331,7 +333,19 @@
             }
 
             // --- EVENT LISTENERS ---
-            voiceNoteBtn.addEventListener('click', toggleVoiceNoteRecording);
+            voiceNoteBtn.addEventListener('pointerdown', (event) => {
+                if (event.pointerType === 'mouse' && event.button !== 0) return;
+                if (!isRecordingVoiceNote) toggleVoiceNoteRecording();
+            });
+            voiceNoteBtn.addEventListener('pointerup', () => {
+                if (isRecordingVoiceNote) toggleVoiceNoteRecording();
+            });
+            voiceNoteBtn.addEventListener('pointerleave', () => {
+                if (isRecordingVoiceNote) toggleVoiceNoteRecording();
+            });
+            voiceNoteBtn.addEventListener('pointercancel', () => {
+                if (isRecordingVoiceNote) toggleVoiceNoteRecording();
+            });
 
             sendBtn.addEventListener('click', () => {
                 if (pendingVoiceNoteDataUrl) {
