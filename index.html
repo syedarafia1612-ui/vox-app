@@ -65,8 +65,13 @@
 
     /* --- CHAT AREA --- */
     .chat-container {
-display: inline;
-        flex: 1; overflow-y: auto; padding: 20px 20px 96px; display: flex; flex-direction: column; gap: 12px;
+        flex: 1; 
+        overflow-y: auto; 
+        padding: 20px; 
+        padding-bottom: 120px; /* Extra space so messages don't hide behind the bar */
+        display: flex; 
+        flex-direction: column; 
+        gap: 12px;
         scroll-behavior: smooth;
     }
     .chat-message { max-width: 80%; padding: 12px 16px; border-radius: 16px; word-wrap: break-word; font-size: 15px; position: relative; }
@@ -76,19 +81,32 @@ display: inline;
     .chat-message.me .msg-user { color: #e0f2f1; }
     .msg-time { font-size: 10px; color: var(--text-muted); float: right; margin-left: 8px; margin-top: 4px; }
 
-    /* --- INPUT BAR --- */
+    /* --- CUSTOM MOBILE INPUT BAR (Your requested code) --- */
     .input-bar {
-        position: fixed; bottom: 0; width: 100%; z-index: 20;
-        display: flex; align-items: center; gap: 10px; padding: 12px 16px;
-        background: var(--card-bg); backdrop-filter: blur(10px);
-        border-top: 1px solid var(--border-color); flex-shrink: 0;
+        position: fixed; 
+        left: 0; right: 0; bottom: 0; 
+        z-index: 999; /* make sure it's on top */
+        display: flex; 
+        align-items: center; 
+        gap: 8px; 
+        padding: 10px 10px calc(10px + env(safe-area-inset-bottom)); 
+        background: var(--card-bg); 
+        backdrop-filter: blur(10px);
+        border-top: 1px solid var(--border-color); 
+        width: 100%;
         box-sizing: border-box;
-        padding-bottom: env(safe-area-inset-bottom, 15px);
-        padding-top: 12px;
     }
+
     .input-bar input {
-        flex: 1; padding: 12px 16px; border-radius: 24px; border: none;
-        background: var(--input-bg); color: var(--text-main); font-size: 15px; outline: none;
+        flex: 1 1 auto; /* allow shrinking */
+        min-width: 0; /* CRITICAL: stops input from overflowing and hiding buttons */
+        padding: 10px 16px; 
+        border-radius: 24px; 
+        border: none;
+        background: var(--input-bg); 
+        color: var(--text-main); 
+        font-size: 15px; 
+        outline: none;
     }
     .input-bar button {
         background: var(--bubble-mine); color: #fff; border: none; border-radius: 50%;
